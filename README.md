@@ -9,12 +9,24 @@
 
 ## 实测结果
 
-| 项目 | 结果 |
+| 项目 | 结果 | 截图 |
+| --- | --- | --- |
+| 编译 `make clean && make` | **0 warning / 0 error** | `运行截图/01_build.png` |
+| 测试 `make test` | 退出码 0，**29 条断言全部通过**，输出 `ALL TESTS PASSED` | `运行截图/05_tests_passed.png` |
+| HTTP Range 端到端（真实 206 数据源，4 MiB） | 中断 → 续传 → 校验，**sha256 完全一致** | `运行截图/04_resume_verify.png` |
+| 空洞效果 | 逻辑 4.00 MiB / 实际 832 KiB / **空洞占比 79.69%**，`du` 显示 0 | `运行截图/02`、`03` |
+
+### 运行截图
+
+| 截图 | 内容 |
 | --- | --- |
-| 编译 `make clean && make` | **0 warning / 0 error** |
-| 测试 `make test` | 退出码 0，**29 条断言全部通过**，输出 `ALL TESTS PASSED` |
-| HTTP Range 端到端（真实 206 数据源，4 MiB） | 中断 → 续传 → 校验，**sha256 完全一致** |
-| 空洞效果 | 逻辑 4.00 MiB / 实际 832 KiB / **空洞占比 79.69%**，`du` 显示 0 |
+| `01_build.png` | 编译：6 个 CC + LD，告警 0 / 错误 0 |
+| `02_sparse_create_status.png` | create 建 4MiB 空洞：逻辑 4194304 字节、实际占用 **0 B**、空洞 **100%**；`ls -ls` 第 1 列为 0，`du` 为 0 |
+| `03_interrupt_hole.png` | `--limit=4` 中断（退出码 130）+ 中断后空洞占比 **79.69%**、分块进度 4/17 |
+| `04_resume_verify.png` | 断点续传（`已完成 4/17 块，从断点继续`）+ 逐块校验 + **sha256 两行完全一致** |
+| `05_tests_passed.png` | `make test`：29 条 `[PASS]`、`用例通过: 29 / 用例失败: 0 / ALL TESTS PASSED` |
+
+> 截图生成方式：虚拟机是 Wayland 会话，X11 截图工具抓不到桌面，故用 `Xvfb` 起无头虚拟显示 + 真实 `xterm` 执行真实命令 + `import -window root` 截图，内容全部为程序真实输出。详见 `源码/截图清单.md`。
 
 ---
 
