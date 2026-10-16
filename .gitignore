@@ -1,0 +1,15 @@
+﻿# 构建产物
+build/
+sparseio
+*.o
+*.d
+*.sio
+tests/work/
+
+# 演示/测试产物
+/tmp/
+*.tmp
+
+# 系统文件
+Thumbs.db
+desktop.ini

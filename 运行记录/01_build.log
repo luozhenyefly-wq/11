@@ -1,0 +1,8 @@
+  CC      src/sio_bitmap.c
+  CC      src/sio_http.c
+  CC      src/sio_main.c
+  CC      src/sio_sha256.c
+  CC      src/sio_sparse.c
+  CC      src/sio_util.c
+  LD      sparseio
+  构建完成: ./sparseio

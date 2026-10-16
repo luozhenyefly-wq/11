@@ -1,0 +1,128 @@
+
+[1m[33m========== 0. 准备：造一个 8MiB 的“服务器端文件”，用 HTTP Range 当数据源 ==========[0m
+-rw-rw-r-- 1 lzy lzy 8.0M 10月 16 13:25 /home/lzy/sparseio/tests/work/demo/server_file.bin
+源 sha256 = 74843731cb53e9a9331587d8a02e231da56ba53c8a4fef19848a8a5d1addb45e
+Range 数据源已启动: http://127.0.0.1:8099/server_file.bin (pid=13061)
+-- 用 curl 验证服务端确实支持 Range（应看到 206 + Content-Range）--
+   HTTP/1.1 206 Partial Content
+   Accept-Ranges: bytes
+   Content-Length: 1000
+   Content-Range: bytes 1000-1999/8388608
+
+[1m[33m========== 1. create：生成空洞文件，逻辑 8MiB，实际占用应为 0 ==========[0m
+[32m$ /home/lzy/sparseio/sparseio create --target=/home/lzy/sparseio/tests/work/demo/dl.bin --source=http://127.0.0.1:8099/server_file.bin --block=256K --head=64K[0m
+[13:25:53.246] INFO  按数据源长度确定目标大小：8388608 字节
+[13:25:53.256] INFO  稀疏文件已创建: /home/lzy/sparseio/tests/work/demo/dl.bin
+[13:25:53.257] INFO    逻辑大小 : 8.00 MiB (8388608 字节)
+[13:25:53.257] INFO    实际占用 : 0 B (0 字节, 0 个 512B 块)
+[13:25:53.257] INFO    空洞占比 : 100.00% （尚未写入任何数据）
+[13:25:53.282] INFO  进度位图已初始化: /home/lzy/sparseio/tests/work/demo/dl.bin.sio
+[13:25:53.283] INFO    块大小   : 256.00 KiB
+[13:25:53.283] INFO    连续头区 : 64.00 KiB
+[13:25:53.283] INFO    总块数   : 33（头区算 1 块）
+[13:25:53.283] INFO    已完成   : 0 / 33
+
+-- ls -ls 看第 1 列（占用块数）--
+0 -rw-r--r-- 1 lzy lzy 8388608 10月 16 13:25 /home/lzy/sparseio/tests/work/demo/dl.bin
+-- du 看真实磁盘占用 --
+0	/home/lzy/sparseio/tests/work/demo/dl.bin
+-- status --
+[32m$ /home/lzy/sparseio/sparseio status --target=/home/lzy/sparseio/tests/work/demo/dl.bin --block=256K --head=64K[0m
+目标文件      : /home/lzy/sparseio/tests/work/demo/dl.bin
+逻辑大小      : 8388608 字节  (8.00 MiB)
+实际占用      : 0 字节  (0 B)，即 0 个 512B 块
+空洞大小      : 8388608 字节  (8.00 MiB)
+空洞占比      : 100.00%
+文件系统块大小: 4096 字节
+进度位图      : /home/lzy/sparseio/tests/work/demo/dl.bin.sio
+分块进度      : 0 / 33 块 (0.00%)
+
+[1m[33m========== 2. write（只下 5 块就停）：观察「已完成偏移 [ off , + len )」 ==========[0m
+[32m$ /home/lzy/sparseio/sparseio write --target=/home/lzy/sparseio/tests/work/demo/dl.bin --source=http://127.0.0.1:8099/server_file.bin --block=256K --head=64K --limit=5[0m
+[13:25:53.432] INFO  开始写入: 目标=/home/lzy/sparseio/tests/work/demo/dl.bin 源=http://127.0.0.1:8099/server_file.bin
+[13:25:53.433] INFO    逻辑大小=8388608 块大小=262144 头区=65536 总块数=33
+[13:25:53.563] INFO  已完成偏移 [         0 , +  65536)  块 1/33  3.03%
+[13:25:53.667] INFO  已完成偏移 [     65536 , + 262144)  块 2/33  6.06%
+[13:25:53.784] INFO  已完成偏移 [    327680 , + 262144)  块 3/33  9.09%
+[13:25:54.026] INFO  已完成偏移 [    589824 , + 262144)  块 4/33  12.12%
+[13:25:54.161] INFO  已完成偏移 [    851968 , + 262144)  块 5/33  15.15%
+[13:25:54.162] WARN  达到 --limit=5，主动中断以演示断点续传
+[13:25:54.162] INFO  中断汇总：本次新写入 1114112 字节，本次跳过（已完成）0 块，进度已保存到位图
+[13:25:54.162] INFO  退出码 130（中断，可重新执行 write 续传）
+
+[1m[33m========== 3. 此刻的空洞：磁盘占用只涨了已下载的那几块 ==========[0m
+[32m$ /home/lzy/sparseio/sparseio status --target=/home/lzy/sparseio/tests/work/demo/dl.bin --block=256K --head=64K[0m
+目标文件      : /home/lzy/sparseio/tests/work/demo/dl.bin
+逻辑大小      : 8388608 字节  (8.00 MiB)
+实际占用      : 1114112 字节  (1.06 MiB)，即 2176 个 512B 块
+空洞大小      : 7274496 字节  (6.94 MiB)
+空洞占比      : 86.72%
+文件系统块大小: 4096 字节
+进度位图      : /home/lzy/sparseio/tests/work/demo/dl.bin.sio
+分块进度      : 5 / 33 块 (15.15%)
+
+-- ls -ls：未下载部分仍然是稀疏的 --
+1088 -rw-r--r-- 1 lzy lzy 8388608 10月 16 13:25 /home/lzy/sparseio/tests/work/demo/dl.bin
+
+[1m[33m========== 4. 断点续传：重跑同一条 write，从断点继续（不从头下） ==========[0m
+[32m$ /home/lzy/sparseio/sparseio write --target=/home/lzy/sparseio/tests/work/demo/dl.bin --source=http://127.0.0.1:8099/server_file.bin --block=256K --head=64K[0m
+[13:25:54.353] INFO  开始写入: 目标=/home/lzy/sparseio/tests/work/demo/dl.bin 源=http://127.0.0.1:8099/server_file.bin
+[13:25:54.354] INFO    逻辑大小=8388608 块大小=262144 头区=65536 总块数=33
+[13:25:54.354] INFO    检测到已有进度位图：已完成 5/33 块，从断点继续
+[13:25:54.499] INFO  已完成偏移 [   1114112 , + 262144)  块 6/33  18.18%
+[13:25:54.610] INFO  已完成偏移 [   1376256 , + 262144)  块 7/33  21.21%
+[13:25:54.747] INFO  已完成偏移 [   1638400 , + 262144)  块 8/33  24.24%
+[13:25:54.918] INFO  已完成偏移 [   1900544 , + 262144)  块 9/33  27.27%
+[13:25:55.110] INFO  已完成偏移 [   2162688 , + 262144)  块 10/33  30.30%
+[13:25:55.191] INFO  已完成偏移 [   2424832 , + 262144)  块 11/33  33.33%
+[13:25:55.249] INFO  已完成偏移 [   2686976 , + 262144)  块 12/33  36.36%
+[13:25:55.305] INFO  已完成偏移 [   2949120 , + 262144)  块 13/33  39.39%
+[13:25:55.360] INFO  已完成偏移 [   3211264 , + 262144)  块 14/33  42.42%
+[13:25:55.529] INFO  已完成偏移 [   3473408 , + 262144)  块 15/33  45.45%
+[13:25:55.612] INFO  已完成偏移 [   3735552 , + 262144)  块 16/33  48.48%
+[13:25:55.734] INFO  已完成偏移 [   3997696 , + 262144)  块 17/33  51.52%
+[13:25:55.861] INFO  已完成偏移 [   4259840 , + 262144)  块 18/33  54.55%
+[13:25:56.069] INFO  已完成偏移 [   4521984 , + 262144)  块 19/33  57.58%
+[13:25:56.187] INFO  已完成偏移 [   4784128 , + 262144)  块 20/33  60.61%
+[13:25:56.295] INFO  已完成偏移 [   5046272 , + 262144)  块 21/33  63.64%
+[13:25:56.401] INFO  已完成偏移 [   5308416 , + 262144)  块 22/33  66.67%
+[13:25:56.530] INFO  已完成偏移 [   5570560 , + 262144)  块 23/33  69.70%
+[13:25:57.044] INFO  已完成偏移 [   5832704 , + 262144)  块 24/33  72.73%
+[13:25:57.198] INFO  已完成偏移 [   6094848 , + 262144)  块 25/33  75.76%
+[13:25:57.258] INFO  已完成偏移 [   6356992 , + 262144)  块 26/33  78.79%
+[13:25:57.351] INFO  已完成偏移 [   6619136 , + 262144)  块 27/33  81.82%
+[13:25:57.452] INFO  已完成偏移 [   6881280 , + 262144)  块 28/33  84.85%
+[13:25:57.514] INFO  已完成偏移 [   7143424 , + 262144)  块 29/33  87.88%
+[13:25:57.563] INFO  已完成偏移 [   7405568 , + 262144)  块 30/33  90.91%
+[13:25:57.646] INFO  已完成偏移 [   7667712 , + 262144)  块 31/33  93.94%
+[13:25:57.716] INFO  已完成偏移 [   7929856 , + 262144)  块 32/33  96.97%
+[13:25:57.844] INFO  已完成偏移 [   8192000 , + 196608)  块 33/33  100.00%
+[13:25:57.845] WARN  HTTP 源长度未知，跳过全量摘要
+[13:25:57.845] INFO  全部块提交完成：33 块，本次新写入 7274496 字节，本次跳过（已完成）5 块，用时 3.49s（1.99 MiB/s）
+
+[1m[33m========== 5. 校验：逐块回读 + sha256 对比 ==========[0m
+[32m$ /home/lzy/sparseio/sparseio verify --target=/home/lzy/sparseio/tests/work/demo/dl.bin --source=http://127.0.0.1:8099/server_file.bin --block=256K --head=64K[0m
+[13:26:01.050] INFO  校验通过：
+[13:26:01.051] INFO    目标文件    : /home/lzy/sparseio/tests/work/demo/dl.bin
+[13:26:01.051] INFO    逻辑大小    : 8388608 字节 (8.00 MiB)
+[13:26:01.051] INFO    磁盘占用    : 8388608 字节 (8.00 MiB)，空洞占比 0.00%
+[13:26:01.051] INFO    已写块      : 33 / 33 块（逐块与源比对一致）
+[13:26:01.051] INFO    空洞块      : 0 块，共 0 字节确认为 0x00
+
+源   sha256 = 74843731cb53e9a9331587d8a02e231da56ba53c8a4fef19848a8a5d1addb45e
+目标 sha256 = 74843731cb53e9a9331587d8a02e231da56ba53c8a4fef19848a8a5d1addb45e
+
+[32m$ /home/lzy/sparseio/sparseio status --target=/home/lzy/sparseio/tests/work/demo/dl.bin --block=256K --head=64K[0m
+目标文件      : /home/lzy/sparseio/tests/work/demo/dl.bin
+逻辑大小      : 8388608 字节  (8.00 MiB)
+实际占用      : 8388608 字节  (8.00 MiB)，即 16384 个 512B 块
+空洞大小      : 0 字节  (0 B)
+空洞占比      : 0.00%
+文件系统块大小: 4096 字节
+进度位图      : /home/lzy/sparseio/tests/work/demo/dl.bin.sio
+分块进度      : 33 / 33 块 (100.00%)
+
+[1m[33m========== 演示结束 ==========[0m
+产物目录: /home/lzy/sparseio/tests/work/demo
+  dl.bin     下载结果（8MiB，已填满）
+  dl.bin.sio 进度位图（断点续传的进度存档）
